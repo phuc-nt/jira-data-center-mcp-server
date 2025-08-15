@@ -30,7 +30,8 @@
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "typecheck": "tsc --noEmit",
     "start": "tsx src/index.ts",
-    "start:production": "tsx src/index.ts",
+    "start:production": "node dist/index.js",
+    "start:compiled": "node dist/index.js",
     "clean": "rm -rf dist"
   },
   "keywords": [
