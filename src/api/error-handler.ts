@@ -68,12 +68,12 @@ export class APIError extends Error {
     super(message);
     this.name = 'APIError';
     this.type = type;
-    this.statusCode = options.statusCode;
+    this.statusCode = options.statusCode ?? 0;
     this.retryable = options.retryable ?? this.isRetryableByDefault(type, options.statusCode);
-    this.retryAfter = options.retryAfter;
-    this.originalError = options.originalError;
-    this.requestId = options.requestId;
-    this.endpoint = options.endpoint;
+    this.retryAfter = options.retryAfter ?? 0;
+    this.originalError = options.originalError ?? new Error('Unknown error');
+    this.requestId = options.requestId ?? '';
+    this.endpoint = options.endpoint ?? '';
     this.timestamp = new Date();
   }
 
@@ -236,7 +236,7 @@ export class APIErrorHandler {
       const error = new APIError(
         'Circuit breaker is open - service unavailable',
         ErrorType.CIRCUIT_BREAKER_OPEN,
-        { endpoint, requestId, retryable: false }
+        { endpoint: endpoint ?? '', requestId: requestId ?? '', retryable: false }
       );
       this.recordFailure(error);
       throw error;
@@ -316,7 +316,7 @@ export class APIErrorHandler {
         return new APIError(
           'Request timeout',
           ErrorType.TIMEOUT_ERROR,
-          { originalError: error, endpoint, requestId }
+          { originalError: error, endpoint: endpoint ?? '', requestId: requestId ?? '' }
         );
       }
 
@@ -324,7 +324,7 @@ export class APIErrorHandler {
         return new APIError(
           'Network error',
           ErrorType.NETWORK_ERROR,
-          { originalError: error, endpoint, requestId }
+          { originalError: error, endpoint: endpoint ?? '', requestId: requestId ?? '' }
         );
       }
 

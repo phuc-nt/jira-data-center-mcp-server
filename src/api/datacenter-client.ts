@@ -7,7 +7,6 @@ import type { JiraDataCenterConfig } from '../config/datacenter-config.js';
 import type { PATAuthenticator } from '../auth/pat-authenticator.js';
 import type { User, UserSearchOptions, UserResolutionResult } from './user-resolver.js';
 import type { ADFDocument, ConversionResult, FormatDetectionResult } from './content-converter.js';
-import type { MappingResult } from './endpoint-mapper.js';
 import type { APIVersion, VersionDetectionResult } from './version-manager.js';
 
 import { EndpointMapper } from './endpoint-mapper.js';
@@ -203,7 +202,7 @@ export class DataCenterAPIClient {
         {
           ...opts,
           body: processedBody,
-          queryParams: mappingResult.transformedParams || opts.queryParams
+          queryParams: mappingResult.transformedParams || opts.queryParams || {}
         }
       ),
       mappingResult.dcEndpoint,
@@ -231,7 +230,7 @@ export class DataCenterAPIClient {
   /**
    * Execute HTTP request to DC instance
    */
-  private async executeRequest<T>(
+  private async executeRequest<T = any>(
     endpoint: string,
     options: APIRequestOptions
   ): Promise<Response> {
@@ -254,7 +253,7 @@ export class DataCenterAPIClient {
 
     // Prepare headers
     const authHeaders = this.authenticator.getAuthHeaders();
-    const headers = {
+    const headers: Record<string, string> = {
       'Authorization': authHeaders['Authorization'],
       'Accept': authHeaders['Accept'],
       'User-Agent': authHeaders['User-Agent'],
@@ -275,7 +274,7 @@ export class DataCenterAPIClient {
 
     try {
       const response = await fetch(url, {
-        method: options.method,
+        method: options.method || 'GET',
         headers,
         body,
         signal: controller.signal
@@ -364,7 +363,7 @@ export class DataCenterAPIClient {
   /**
    * Process API response
    */
-  private async processResponse<T>(response: Response, options: APIRequestOptions): Promise<{ data: T }> {
+  private async processResponse<T>(response: Response, _options: APIRequestOptions): Promise<{ data: T }> {
     let data: T;
 
     const contentType = response.headers.get('content-type') || '';

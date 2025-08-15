@@ -14,16 +14,23 @@
     "doc": "docs"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node simple-build.cjs",
+    "build:tsc": "tsc",
+    "build:verify": "node simple-build.cjs",
     "dev": "tsx src/index.ts",
+    "dev:agile": "tsx src/modules/test-agile-module.ts",
+    "dev:core": "tsx src/modules/test-core-module.ts", 
+    "dev:search": "tsx src/modules/test-search-module.ts",
     "test": "jest",
+    "test:modules": "npm run dev:agile && npm run dev:core && npm run dev:search",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/index.js",
+    "start": "tsx src/index.ts",
+    "start:production": "tsx src/index.ts",
     "clean": "rm -rf dist"
   },
   "keywords": [

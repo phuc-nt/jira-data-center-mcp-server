@@ -82,7 +82,7 @@ export class UniversalUserSearchManager {
       return result;
     } catch (error) {
       this.logger.error('Universal user search failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         searchMode,
         query: params.query
       });
@@ -157,7 +157,7 @@ export class UniversalUserSearchManager {
       return this.deduplicateUsers(users);
     } catch (error) {
       this.logger.warn('Assignable users search failed, falling back to general search', {
-        error: error instanceof Error ? error.message : 'Unknown error'
+        errorMessage: error instanceof Error ? error.message : 'Unknown error'
       });
       return this.searchGeneralUsers(params);
     }
@@ -248,7 +248,7 @@ export class UniversalUserSearchManager {
       return filteredUsers;
     } catch (error) {
       this.logger.warn('Project users search failed, falling back to general search', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         projectKey: params.projectKey
       });
       return this.searchGeneralUsers(params);
@@ -294,7 +294,7 @@ export class UniversalUserSearchManager {
       return response.data;
     } catch (error) {
       this.logger.error('General users search failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         query: params.query
       });
       throw error;
@@ -327,14 +327,14 @@ export class UniversalUserSearchManager {
         const generalUsers = await this.searchGeneralUsers({
           query: params.query,
           maxResults: params.maxResults || 200, // Get more to allow filtering
-          includeActive: params.active
+          ...(params.active !== undefined && { includeActive: params.active })
         });
         users = generalUsers;
       } else {
         // Get all users if no query (up to limit)
         const allUsers = await this.searchGeneralUsers({
           maxResults: params.maxResults || 200,
-          includeActive: params.active
+          ...(params.active !== undefined && { includeActive: params.active })
         });
         users = allUsers;
       }
@@ -345,7 +345,7 @@ export class UniversalUserSearchManager {
       // Filter by email domain
       if (params.emailDomain) {
         filteredUsers = filteredUsers.filter(user =>
-          user.emailAddress?.toLowerCase().endsWith(`@${params.emailDomain.toLowerCase()}`)
+          user.emailAddress?.toLowerCase().endsWith(`@${params.emailDomain!.toLowerCase()}`)
         );
       }
 
@@ -403,7 +403,7 @@ export class UniversalUserSearchManager {
       };
     } catch (error) {
       this.logger.error('Advanced user search failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         params
       });
       throw error;
@@ -435,8 +435,8 @@ export class UniversalUserSearchManager {
         case 'assignable':
           users = await this.searchAssignableUsers({
             query: params.partialInput,
-            projectKey: params.projectKey,
-            issueKey: params.issueKey,
+            ...(params.projectKey && { projectKey: params.projectKey }),
+            ...(params.issueKey && { issueKey: params.issueKey }),
             maxResults: maxSuggestions * 2 // Get more for scoring
           });
           break;
@@ -505,7 +505,7 @@ export class UniversalUserSearchManager {
       return suggestions;
     } catch (error) {
       this.logger.error('Failed to get user suggestions', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         partialInput: params.partialInput,
         context: params.context
       });
@@ -592,7 +592,7 @@ export class UniversalUserSearchManager {
       return profile;
     } catch (error) {
       this.logger.error('Failed to get user profile', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         accountId: params.accountId,
         username: params.username
       });

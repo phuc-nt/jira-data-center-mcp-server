@@ -24,7 +24,6 @@ import { UniversalUserSearchManager } from './universal-user-search.js';
 
 // Import types from other modules for consolidated tools
 import type { User, Project, Version } from '../core/types.js';
-import type { Board, Sprint } from '../agile/types.js';
 
 /**
  * Search Module - Complete search and discovery implementation
@@ -65,7 +64,7 @@ export class SearchModule {
       this.logger.info('Search Module initialization completed');
     } catch (error) {
       this.logger.error('Search Module initialization failed', {
-        error: error instanceof Error ? error.message : 'Unknown error'
+        errorMessage: error instanceof Error ? error.message : 'Unknown error'
       });
       throw error;
     }

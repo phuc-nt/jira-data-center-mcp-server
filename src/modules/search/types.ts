@@ -5,8 +5,9 @@
  */
 
 import type { 
-  Issue, User, Project, Version, Board, Sprint 
+  Issue, User, Project 
 } from '../core/types.js';
+import type { Board, Sprint } from '../agile/types.js';
 
 /**
  * Enhanced search types for DC optimization

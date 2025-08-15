@@ -117,7 +117,7 @@ export class EnhancedSearchManager {
       return enhancedResponse;
     } catch (error) {
       this.logger.error('Enhanced search failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         jql: params.jql,
         startAt: params.startAt,
         maxResults: params.maxResults
@@ -203,7 +203,7 @@ export class EnhancedSearchManager {
       return response.data;
     } catch (error) {
       this.logger.error('Enhanced issue retrieval failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         issueIdOrKey: params.issueIdOrKey
       });
       throw error;

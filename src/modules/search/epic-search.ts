@@ -91,7 +91,7 @@ export class EpicSearchManager {
       return result;
     } catch (error) {
       this.logger.error('Epic search failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         boardId: params.boardId,
         query: params.query
       });
@@ -175,7 +175,7 @@ export class EpicSearchManager {
       return null;
     } catch (error) {
       this.logger.error('Failed to get epic details', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         epicIdOrKey: params.epicIdOrKey,
         boardId: params.boardId
       });
@@ -212,8 +212,8 @@ export class EpicSearchManager {
         try {
           const result = await this.epicSearchAgile({
             boardId,
-            query: params.query,
-            done: params.done,
+            ...(params.query && { query: params.query }),
+            ...(params.done !== undefined && { done: params.done }),
             maxResults: maxPerBoard
           });
 
@@ -224,7 +224,7 @@ export class EpicSearchManager {
         } catch (error) {
           this.logger.warn('Failed to search epics in board', {
             boardId,
-            error: error instanceof Error ? error.message : 'Unknown error'
+            errorMessage: error instanceof Error ? error.message : 'Unknown error'
           });
           return [];
         }
@@ -272,7 +272,7 @@ export class EpicSearchManager {
       };
     } catch (error) {
       this.logger.error('Cross-board epic search failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         boardIds: params.boardIds,
         query: params.query
       });
@@ -331,7 +331,7 @@ export class EpicSearchManager {
       };
     } catch (error) {
       this.logger.error('Failed to get epic issues', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         epicKey: params.epicKey,
         boardId: params.boardId
       });
@@ -361,7 +361,7 @@ export class EpicSearchManager {
     try {
       const epicIssues = await this.getEpicIssues({
         epicKey: params.epicKey,
-        boardId: params.boardId,
+        ...(params.boardId && { boardId: params.boardId }),
         maxResults: 1000,
         fields: ['status', 'customfield_10002'] // status + story points
       });
@@ -408,7 +408,7 @@ export class EpicSearchManager {
         completedIssues,
         inProgressIssues,
         todoIssues,
-        storyPoints: totalStoryPoints > 0 ? totalStoryPoints : undefined,
+        ...(totalStoryPoints > 0 && { storyPoints: totalStoryPoints }),
         completionPercentage: Math.round(completionPercentage * 100) / 100
       };
 
@@ -422,7 +422,7 @@ export class EpicSearchManager {
       return stats;
     } catch (error) {
       this.logger.error('Failed to get epic statistics', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
         epicKey: params.epicKey,
         boardId: params.boardId
       });
