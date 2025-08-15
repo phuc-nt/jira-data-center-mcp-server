@@ -514,7 +514,7 @@ export class APIErrorHandler {
         this.logger.error('Circuit breaker opened due to failures', {
           failureCount: state.failureCount,
           threshold: this.config.circuitBreaker.failureThreshold
-        });
+        } as any);
       }
     } else if (state.state === CircuitBreakerState.HALF_OPEN) {
       // Failed during half-open, go back to open
