@@ -67,13 +67,16 @@ export const testUtils = {
     const mockText = jest.fn() as any;
     
     mockJson.mockResolvedValue(data);
-    mockText.mockResolvedValue(JSON.stringify(data));
+    mockText.mockResolvedValue(typeof data === 'string' ? data : JSON.stringify(data));
+    
+    const headers = new Headers();
+    headers.set('content-type', 'application/json');
     
     const response = {
       ok: status >= 200 && status < 300,
       status,
       statusText: statusText || 'OK',
-      headers: new Headers(),
+      headers,
       json: mockJson,
       text: mockText,
     } as unknown as Response;

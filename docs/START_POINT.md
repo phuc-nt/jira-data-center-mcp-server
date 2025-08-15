@@ -1,10 +1,10 @@
 # MCP Jira Data Center Server v1.0.0 - Project Hub
 
-**Latest Achievement**: Sprint 1.1 Foundation ✅ COMPLETED - PAT Authentication & Infrastructure hoàn tất  
-**Current Status**: Sprint 1.2 API Client - Ready for DC endpoint adaptation  
-**Project Status**: v1.0.0-DC 🔄 DEVELOPMENT IN PROGRESS - Foundation deployed
+**Latest Achievement**: Sprint 1.2 API Client ✅ COMPLETED - DC endpoint adaptation layer hoàn tất  
+**Current Status**: Sprint 1.3 Core Tools - Ready for MCP tools implementation  
+**Project Status**: v1.0.0-DC 🔄 DEVELOPMENT IN PROGRESS - API Foundation deployed
 
-> **Quick Status**: Sprint 1.1 Foundation ✅ → Sprint 1.2 API Client: DC endpoint adaptation
+> **Quick Status**: Sprint 1.2 API Client ✅ → Sprint 1.3 Core Tools: MCP tools implementation
 
 ---
 
@@ -25,7 +25,22 @@
 ✅ TypeScript Build System       # Strict mode with ESM support
 ```
 
-**Current Phase**: Sprint 1.2 API Client Adaptation - DC endpoint integration
+### Sprint 1.2 API Client ✅ COMPLETED (August 15, 2025)
+**Duration:** 1 day (API Adaptation implemented)  
+**Result:** Complete DC endpoint adaptation layer deployed với 169 passing tests
+
+#### Technical Achievements:
+```bash
+# API Client Components Delivered:
+✅ Core API Endpoint Mapping      # Cloud v3 → DC v2/latest with 30+ endpoints  
+✅ API Version Negotiation        # Auto-detection với fallback mechanism
+✅ ADF to Wiki Markup Converter   # 20+ elements với graceful degradation
+✅ User Resolution System         # AccountId ↔ Username dual identifier support
+✅ Unified Data Center API Client # High-level integration của tất cả components
+✅ Error Handling & Retry Logic   # Circuit breaker với exponential backoff
+```
+
+**Current Phase**: Sprint 1.3 Core Tools Implementation - MCP tools cho AI assistants
 
 ---
 

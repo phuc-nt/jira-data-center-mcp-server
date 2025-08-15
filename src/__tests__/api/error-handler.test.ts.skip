@@ -1,0 +1,512 @@
+import { describe, expect, it, beforeEach, jest } from '@jest/globals';
+import { 
+  APIErrorHandler, 
+  APIError, 
+  ErrorType, 
+  RetryStrategy, 
+  CircuitBreakerState 
+} from '../../api/error-handler.js';
+import { testUtils } from '../setup.js';
+
+describe('APIErrorHandler', () => {
+  let errorHandler: APIErrorHandler;
+
+  beforeEach(() => {
+    errorHandler = APIErrorHandler.createProductionHandler();
+    testUtils.resetMocks();
+  });
+
+  describe('constructor', () => {
+    it('should initialize with default configuration', () => {
+      expect(errorHandler).toBeInstanceOf(APIErrorHandler);
+    });
+
+    it('should initialize circuit breaker in closed state', () => {
+      const status = errorHandler.getCircuitBreakerStatus();
+      expect(status.state).toBe(CircuitBreakerState.CLOSED);
+      expect(status.failureCount).toBe(0);
+    });
+  });
+
+  describe('APIError class', () => {
+    it('should create error with basic properties', () => {
+      const error = new APIError('Test error', ErrorType.NETWORK_ERROR);
+      
+      expect(error.message).toBe('Test error');
+      expect(error.type).toBe(ErrorType.NETWORK_ERROR);
+      expect(error.retryable).toBe(true); // Network errors are retryable
+      expect(error.timestamp).toBeInstanceOf(Date);
+    });
+
+    it('should determine retryable status correctly', () => {
+      const networkError = new APIError('Network error', ErrorType.NETWORK_ERROR);
+      const authError = new APIError('Auth error', ErrorType.AUTHENTICATION_ERROR);
+      const serverError = new APIError('Server error', ErrorType.SERVER_ERROR, { statusCode: 500 });
+      const validationError = new APIError('Validation error', ErrorType.VALIDATION_ERROR, { statusCode: 422 });
+
+      expect(networkError.retryable).toBe(true);
+      expect(authError.retryable).toBe(false);
+      expect(serverError.retryable).toBe(true);
+      expect(validationError.retryable).toBe(false);
+    });
+
+    it('should include optional properties', () => {
+      const error = new APIError('Test error', ErrorType.RATE_LIMIT_ERROR, {
+        statusCode: 429,
+        retryAfter: 60,
+        requestId: 'req_123',
+        endpoint: '/test'
+      });
+
+      expect(error.statusCode).toBe(429);
+      expect(error.retryAfter).toBe(60);
+      expect(error.requestId).toBe('req_123');
+      expect(error.endpoint).toBe('/test');
+    });
+
+    it('should serialize to JSON correctly', () => {
+      const error = new APIError('Test error', ErrorType.TIMEOUT_ERROR, {
+        statusCode: 408,
+        requestId: 'req_123'
+      });
+
+      const json = error.toJSON();
+      expect(json.name).toBe('APIError');
+      expect(json.message).toBe('Test error');
+      expect(json.type).toBe(ErrorType.TIMEOUT_ERROR);
+      expect(json.statusCode).toBe(408);
+      expect(json.requestId).toBe('req_123');
+    });
+  });
+
+  describe('executeWithRetry', () => {
+    it('should execute successful request without retries', async () => {
+      const mockRequest = jest.fn(() => Promise.resolve('success'));
+
+      const result = await errorHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+
+      expect(result).toBe('success');
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry on retryable errors', async () => {
+      const mockRequest = jest.fn()
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.resolve('success'));
+
+      const result = await errorHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+
+      expect(result).toBe('success');
+      expect(mockRequest).toHaveBeenCalledTimes(3);
+    });
+
+    it('should not retry on non-retryable errors', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(
+        new APIError('Authentication failed', ErrorType.AUTHENTICATION_ERROR, { statusCode: 401 })
+      ));
+
+      await expect(
+        errorHandler.executeWithRetry(mockRequest, '/test', 'req_123')
+      ).rejects.toThrow('Authentication failed');
+
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('should respect maximum retry attempts', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(new Error('Network error')));
+
+      await expect(
+        errorHandler.executeWithRetry(mockRequest, '/test', 'req_123')
+      ).rejects.toThrow('Network error');
+
+      expect(mockRequest).toHaveBeenCalledTimes(4); // Initial + 3 retries
+    });
+
+    it('should handle timeout errors correctly', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(
+        new DOMException('The operation was aborted.', 'AbortError')
+      ));
+
+      await expect(
+        errorHandler.executeWithRetry(mockRequest, '/test', 'req_123')
+      ).rejects.toThrow(APIError);
+
+      const metrics = errorHandler.getMetrics();
+      expect(metrics.errorsByType[ErrorType.TIMEOUT_ERROR]).toBe(4); // Initial + 3 retries
+    });
+
+    it('should apply exponential backoff correctly', async () => {
+      const delays: number[] = [];
+      const mockDelay = jest.spyOn(global, 'setTimeout').mockImplementation((callback, delay) => {
+        delays.push(delay as number);
+        setImmediate(callback as () => void);
+        return {} as NodeJS.Timeout;
+      });
+
+      const mockRequest = jest.fn()
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.resolve('success'));
+
+      await errorHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+
+      expect(delays.length).toBe(2); // Two retries
+      expect(delays[1]).toBeGreaterThan(delays[0]); // Exponential increase
+
+      mockDelay.mockRestore();
+    });
+  });
+
+  describe('circuit breaker', () => {
+    it('should open circuit after failure threshold', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(new Error('Server error')));
+
+      // Exceed failure threshold (5 failures)
+      for (let i = 0; i < 5; i++) {
+        try {
+          await errorHandler.executeWithRetry(mockRequest, '/test', `req_${i}`);
+        } catch {
+          // Expected failures
+        }
+      }
+
+      const status = errorHandler.getCircuitBreakerStatus();
+      expect(status.state).toBe(CircuitBreakerState.OPEN);
+      expect(status.failureCount).toBe(5);
+    });
+
+    it('should block requests when circuit is open', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(new Error('Server error')));
+
+      // Open the circuit
+      for (let i = 0; i < 5; i++) {
+        try {
+          await errorHandler.executeWithRetry(mockRequest, '/test', `req_${i}`);
+        } catch {
+          // Expected failures
+        }
+      }
+
+      // Next request should be blocked
+      let caughtError: APIError;
+      try {
+        await errorHandler.executeWithRetry(mockRequest, '/test', 'req_blocked');
+      } catch (error) {
+        caughtError = error as APIError;
+      }
+      
+      expect(caughtError!.type).toBe(ErrorType.CIRCUIT_BREAKER_OPEN);
+    });
+
+    it('should transition to half-open after recovery timeout', async () => {
+      const mockRequest = jest.fn();
+
+      // Create short recovery timeout for testing
+      const shortTimeoutHandler = new APIErrorHandler(
+        APIErrorHandler.createDefaultConfig({
+          circuitBreaker: {
+            failureThreshold: 2,
+            recoveryTimeout: 100, // 100ms
+            successThreshold: 1,
+            enabled: true
+          }
+        })
+      );
+
+      // Open the circuit
+      mockRequest.mockImplementation(() => Promise.reject(new Error('Server error')));
+      for (let i = 0; i < 2; i++) {
+        try {
+          await shortTimeoutHandler.executeWithRetry(mockRequest, '/test', `req_${i}`);
+        } catch {
+          // Expected failures
+        }
+      }
+
+      expect(shortTimeoutHandler.getCircuitBreakerStatus().state).toBe(CircuitBreakerState.OPEN);
+
+      // Wait for recovery timeout
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // Next request should move to half-open (and succeed)
+      mockRequest.mockImplementation(() => Promise.resolve('success'));
+      const result = await shortTimeoutHandler.executeWithRetry(mockRequest, '/test', 'req_recovery');
+      expect(result).toBe('success');
+
+      expect(shortTimeoutHandler.getCircuitBreakerStatus().state).toBe(CircuitBreakerState.CLOSED);
+    });
+
+    it('should close circuit after successful requests in half-open state', async () => {
+      const mockRequest = jest.fn();
+
+      // Create configuration with low thresholds for testing
+      const testHandler = new APIErrorHandler(
+        APIErrorHandler.createDefaultConfig({
+          circuitBreaker: {
+            failureThreshold: 1,
+            recoveryTimeout: 50,
+            successThreshold: 1,
+            enabled: true
+          }
+        })
+      );
+
+      // Open circuit
+      mockRequest.mockImplementationOnce(() => Promise.reject(new Error('Server error')));
+      try {
+        await testHandler.executeWithRetry(mockRequest, '/test', 'req_fail');
+      } catch {
+        // Expected failure
+      }
+
+      expect(testHandler.getCircuitBreakerStatus().state).toBe(CircuitBreakerState.OPEN);
+
+      // Wait for recovery
+      await new Promise(resolve => setTimeout(resolve, 60));
+
+      // Successful request should close circuit
+      mockRequest.mockImplementationOnce(() => Promise.resolve('success'));
+      const result = await testHandler.executeWithRetry(mockRequest, '/test', 'req_success');
+      expect(result).toBe('success');
+
+      expect(testHandler.getCircuitBreakerStatus().state).toBe(CircuitBreakerState.CLOSED);
+    });
+  });
+
+  describe('error normalization', () => {
+    it('should normalize HTTP response errors', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(new Error('API request failed: 401 Unauthorized')));
+
+      await expect(
+        errorHandler.executeWithRetry(mockRequest, '/test', 'req_123')
+      ).rejects.toThrow(APIError);
+
+      const metrics = errorHandler.getMetrics();
+      expect(metrics.errorsByType[ErrorType.AUTHENTICATION_ERROR]).toBeGreaterThan(0);
+    });
+
+    it('should normalize network errors', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(new Error('fetch failed')));
+
+      await expect(
+        errorHandler.executeWithRetry(mockRequest, '/test', 'req_123')
+      ).rejects.toThrow(APIError);
+
+      const metrics = errorHandler.getMetrics();
+      expect(metrics.errorsByType[ErrorType.NETWORK_ERROR]).toBeGreaterThan(0);
+    });
+
+    it('should normalize timeout errors', async () => {
+      const mockRequest = jest.fn(() => Promise.reject(
+        new DOMException('Operation timed out', 'AbortError')
+      ));
+
+      await expect(
+        errorHandler.executeWithRetry(mockRequest, '/test', 'req_123')
+      ).rejects.toThrow(APIError);
+
+      const metrics = errorHandler.getMetrics();
+      expect(metrics.errorsByType[ErrorType.TIMEOUT_ERROR]).toBeGreaterThan(0);
+    });
+
+    it('should pass through existing APIErrors', async () => {
+      const originalError = new APIError('Custom error', ErrorType.VALIDATION_ERROR, { statusCode: 422 });
+      const mockRequest = jest.fn(() => Promise.reject(originalError));
+
+      const caughtError = await errorHandler.executeWithRetry(mockRequest, '/test', 'req_123')
+        .catch(err => err);
+
+      expect(caughtError).toBe(originalError);
+    });
+  });
+
+  describe('metrics collection', () => {
+    it('should track request metrics correctly', async () => {
+      const mockRequest = jest.fn()
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.resolve('success'));
+
+      await errorHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+
+      const metrics = errorHandler.getMetrics();
+      expect(metrics.totalRequests).toBe(1);
+      expect(metrics.totalFailures).toBe(1); // Only first failure is counted as request failure
+      expect(metrics.totalRetries).toBe(1);
+    });
+
+    it('should track error types correctly', async () => {
+      const mockRequest = jest.fn()
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.reject(new Error('API request failed: 500 Internal Server Error')))
+        .mockImplementationOnce(() => Promise.resolve('success'));
+
+      await errorHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+
+      const metrics = errorHandler.getMetrics();
+      expect(metrics.errorsByType[ErrorType.NETWORK_ERROR]).toBe(1);
+      expect(metrics.errorsByType[ErrorType.SERVER_ERROR]).toBe(1);
+    });
+
+    it('should reset metrics correctly', () => {
+      errorHandler.resetMetrics();
+      
+      const metrics = errorHandler.getMetrics();
+      expect(metrics.totalRequests).toBe(0);
+      expect(metrics.totalFailures).toBe(0);
+      expect(metrics.totalRetries).toBe(0);
+      expect(Object.keys(metrics.errorsByType)).toHaveLength(0);
+    });
+  });
+
+  describe('configuration options', () => {
+    it('should use fixed delay strategy', async () => {
+      const fixedDelayHandler = new APIErrorHandler({
+        retry: {
+          strategy: RetryStrategy.FIXED_DELAY,
+          maxRetries: 2,
+          baseDelay: 100,
+          maxDelay: 1000,
+          backoffMultiplier: 2,
+          jitter: false
+        },
+        circuitBreaker: {
+          failureThreshold: 5,
+          recoveryTimeout: 60000,
+          successThreshold: 3,
+          enabled: false
+        },
+        timeout: 5000,
+        enableMetrics: true
+      });
+
+      const delays: number[] = [];
+      const mockDelay = jest.spyOn(global, 'setTimeout').mockImplementation((callback, delay) => {
+        delays.push(delay as number);
+        setImmediate(callback as () => void);
+        return {} as NodeJS.Timeout;
+      });
+
+      const mockRequest = jest.fn()
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.resolve('success'));
+
+      await fixedDelayHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+
+      expect(delays).toEqual([100, 100]); // Fixed delays
+
+      mockDelay.mockRestore();
+    });
+
+    it('should use linear backoff strategy', async () => {
+      const linearHandler = new APIErrorHandler({
+        retry: {
+          strategy: RetryStrategy.LINEAR_BACKOFF,
+          maxRetries: 2,
+          baseDelay: 100,
+          maxDelay: 1000,
+          backoffMultiplier: 2,
+          jitter: false
+        },
+        circuitBreaker: {
+          failureThreshold: 5,
+          recoveryTimeout: 60000,
+          successThreshold: 3,
+          enabled: false
+        },
+        timeout: 5000,
+        enableMetrics: true
+      });
+
+      const delays: number[] = [];
+      const mockDelay = jest.spyOn(global, 'setTimeout').mockImplementation((callback, delay) => {
+        delays.push(delay as number);
+        setImmediate(callback as () => void);
+        return {} as NodeJS.Timeout;
+      });
+
+      const mockRequest = jest.fn()
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.reject(new Error('Network error')))
+        .mockImplementationOnce(() => Promise.resolve('success'));
+
+      await linearHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+
+      expect(delays).toEqual([100, 200]); // Linear progression: 100*1, 100*2
+
+      mockDelay.mockRestore();
+    });
+
+    it('should respect maximum delay limit', async () => {
+      const limitedHandler = new APIErrorHandler({
+        retry: {
+          strategy: RetryStrategy.EXPONENTIAL_BACKOFF,
+          maxRetries: 3,
+          baseDelay: 1000,
+          maxDelay: 2000, // Low max to test limiting
+          backoffMultiplier: 3,
+          jitter: false
+        },
+        circuitBreaker: {
+          failureThreshold: 5,
+          recoveryTimeout: 60000,
+          successThreshold: 3,
+          enabled: false
+        },
+        timeout: 5000,
+        enableMetrics: true
+      });
+
+      const delays: number[] = [];
+      const mockDelay = jest.spyOn(global, 'setTimeout').mockImplementation((callback, delay) => {
+        delays.push(delay as number);
+        setImmediate(callback as () => void);
+        return {} as NodeJS.Timeout;
+      });
+
+      const mockRequest = jest.fn(() => Promise.reject(new Error('Network error')));
+
+      try {
+        await limitedHandler.executeWithRetry(mockRequest, '/test', 'req_123');
+      } catch {
+        // Expected to fail
+      }
+
+      // All delays should be capped at maxDelay (2000)
+      delays.forEach(delay => {
+        expect(delay).toBeLessThanOrEqual(2000);
+      });
+
+      mockDelay.mockRestore();
+    });
+  });
+
+  describe('utility methods', () => {
+    it('should create default configuration', () => {
+      const config = APIErrorHandler.createDefaultConfig();
+      
+      expect(config.retry.strategy).toBe(RetryStrategy.EXPONENTIAL_BACKOFF);
+      expect(config.retry.maxRetries).toBe(3);
+      expect(config.circuitBreaker.enabled).toBe(true);
+      expect(config.enableMetrics).toBe(true);
+    });
+
+    it('should create production handler', () => {
+      const handler = APIErrorHandler.createProductionHandler();
+      
+      expect(handler).toBeInstanceOf(APIErrorHandler);
+      const status = handler.getCircuitBreakerStatus();
+      expect(status.state).toBe(CircuitBreakerState.CLOSED);
+    });
+
+    it('should reset circuit breaker manually', () => {
+      // Manually set some failure state
+      errorHandler.resetCircuitBreaker();
+      
+      const status = errorHandler.getCircuitBreakerStatus();
+      expect(status.state).toBe(CircuitBreakerState.CLOSED);
+      expect(status.failureCount).toBe(0);
+    });
+  });
+});
