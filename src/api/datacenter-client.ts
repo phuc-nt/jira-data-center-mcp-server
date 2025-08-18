@@ -9,7 +9,6 @@ import type { User, UserSearchOptions, UserResolutionResult } from './user-resol
 import type { ADFDocument, ConversionResult, FormatDetectionResult } from './content-converter.js';
 import type { APIVersion, VersionDetectionResult } from './version-manager.js';
 
-import { EndpointMapper } from './endpoint-mapper.js';
 import { APIVersionManager } from './version-manager.js';
 import { ContentFormatConverter } from './content-converter.js';
 import { UserResolver } from './user-resolver.js';
@@ -85,7 +84,6 @@ export interface SearchParams {
  */
 export class DataCenterAPIClient {
   private readonly logger = logger.child('DCAPIClient');
-  private readonly endpointMapper: EndpointMapper;
   private readonly versionManager: APIVersionManager;
   private readonly contentConverter: ContentFormatConverter;
   private readonly userResolver: UserResolver;
@@ -96,7 +94,6 @@ export class DataCenterAPIClient {
     private authenticator: PATAuthenticator,
     errorHandlerConfig?: Partial<ErrorHandlerConfig>
   ) {
-    this.endpointMapper = new EndpointMapper(config);
     this.versionManager = new APIVersionManager(config, authenticator);
     this.contentConverter = new ContentFormatConverter();
     this.userResolver = new UserResolver(config, authenticator);
@@ -138,7 +135,7 @@ export class DataCenterAPIClient {
    * Make API request with automatic DC adaptations
    */
   async request<T = unknown>(
-    cloudEndpoint: string,
+    dcEndpoint: string,
     options: APIRequestOptions = {}
   ): Promise<APIResponse<T>> {
     const startTime = Date.now();
@@ -152,23 +149,15 @@ export class DataCenterAPIClient {
     };
 
     this.logger.debug('Making DC API request', {
-      cloudEndpoint,
+      dcEndpoint,
       method: opts.method,
       hasBody: !!opts.body
     });
 
-    // Map Cloud endpoint to DC equivalent
-    const mappingResult = this.endpointMapper.mapEndpoint(
-      cloudEndpoint,
-      opts.pathParams,
-      opts.queryParams
-    );
+    // Validate DC endpoint format
+    this.validateDCEndpoint(dcEndpoint);
 
-    if (!mappingResult.supported) {
-      throw new Error(`Endpoint not supported in Data Center: ${cloudEndpoint}`);
-    }
-
-    const warnings: string[] = [...(mappingResult.warnings || [])];
+    const warnings: string[] = [];
     
     // Prepare request body with content conversion
     let processedBody = opts.body;
@@ -198,14 +187,14 @@ export class DataCenterAPIClient {
     const requestId = this.generateRequestId();
     const response = await this.errorHandler.executeWithRetry(
       () => this.executeRequest<T>(
-        mappingResult.dcEndpoint,
+        dcEndpoint,
         {
           ...opts,
           body: processedBody,
-          queryParams: mappingResult.transformedParams || opts.queryParams || {}
+          queryParams: opts.queryParams || {}
         }
       ),
-      mappingResult.dcEndpoint,
+      dcEndpoint,
       requestId
     );
 
@@ -218,13 +207,31 @@ export class DataCenterAPIClient {
       data: processedResponse.data as T,
       status: response.status,
       headers: this.extractHeaders(response),
-      endpoint: mappingResult.dcEndpoint,
-      mappingUsed: true,
+      endpoint: dcEndpoint,
+      mappingUsed: false,
       conversionApplied,
       userResolutionApplied,
       warnings,
       responseTime
     };
+  }
+
+  /**
+   * Validate that endpoint follows DC API format
+   */
+  private validateDCEndpoint(endpoint: string): void {
+    const validPrefixes = [
+      '/rest/api/2/',
+      '/rest/api/latest/',
+      '/rest/agile/1.0/'
+    ];
+    
+    if (!validPrefixes.some(prefix => endpoint.startsWith(prefix))) {
+      throw new Error(
+        `Invalid DC API endpoint: ${endpoint}. ` +
+        `Expected format: ${validPrefixes.join(', ')}`
+      );
+    }
   }
 
   /**
@@ -393,7 +400,7 @@ export class DataCenterAPIClient {
    * Get current user information
    */
   async getCurrentUser(): Promise<APIResponse<User>> {
-    return this.request<User>('/rest/api/3/myself');
+    return this.request<User>('/rest/api/2/myself');
   }
 
   /**
@@ -405,7 +412,7 @@ export class DataCenterAPIClient {
     startAt: number;
     maxResults: number;
   }>> {
-    return this.request('/rest/api/3/search', {
+    return this.request('/rest/api/2/search', {
       method: 'POST',
       body: params
     });
@@ -423,7 +430,7 @@ export class DataCenterAPIClient {
     if (fields) queryParams.fields = fields.join(',');
     if (expand) queryParams.expand = expand.join(',');
 
-    return this.request(`/rest/api/3/issue/${issueKey}`, {
+    return this.request(`/rest/api/2/issue/${issueKey}`, {
       queryParams
     });
   }
@@ -432,7 +439,7 @@ export class DataCenterAPIClient {
    * Create new issue
    */
   async createIssue(issueData: IssueData): Promise<APIResponse<{ key: string; id: string }>> {
-    return this.request('/rest/api/3/issue', {
+    return this.request('/rest/api/2/issue', {
       method: 'POST',
       body: issueData,
       convertContent: true,
@@ -444,7 +451,7 @@ export class DataCenterAPIClient {
    * Update issue
    */
   async updateIssue(issueKey: string, issueData: IssueData): Promise<APIResponse<void>> {
-    return this.request(`/rest/api/3/issue/${issueKey}`, {
+    return this.request(`/rest/api/2/issue/${issueKey}`, {
       method: 'PUT',
       body: issueData,
       convertContent: true,
@@ -456,7 +463,7 @@ export class DataCenterAPIClient {
    * Add comment to issue
    */
   async addComment(issueKey: string, comment: CommentData): Promise<APIResponse<unknown>> {
-    return this.request(`/rest/api/3/issue/${issueKey}/comment`, {
+    return this.request(`/rest/api/2/issue/${issueKey}/comment`, {
       method: 'POST',
       body: comment,
       convertContent: true
@@ -475,7 +482,7 @@ export class DataCenterAPIClient {
 
     const assignableId = this.userResolver.getAssignableIdentifier(userResult.user);
 
-    return this.request(`/rest/api/3/issue/${issueKey}/assignee`, {
+    return this.request(`/rest/api/2/issue/${issueKey}/assignee`, {
       method: 'PUT',
       body: { accountId: assignableId }
     });
@@ -485,7 +492,7 @@ export class DataCenterAPIClient {
    * Get issue transitions
    */
   async getIssueTransitions(issueKey: string): Promise<APIResponse<{ transitions: unknown[] }>> {
-    return this.request(`/rest/api/3/issue/${issueKey}/transitions`);
+    return this.request(`/rest/api/2/issue/${issueKey}/transitions`);
   }
 
   /**
@@ -511,7 +518,7 @@ export class DataCenterAPIClient {
       };
     }
 
-    return this.request(`/rest/api/3/issue/${issueKey}/transitions`, {
+    return this.request(`/rest/api/2/issue/${issueKey}/transitions`, {
       method: 'POST',
       body,
       convertContent: true
@@ -522,14 +529,14 @@ export class DataCenterAPIClient {
    * Get all projects
    */
   async getProjects(): Promise<APIResponse<unknown[]>> {
-    return this.request('/rest/api/3/project');
+    return this.request('/rest/api/2/project');
   }
 
   /**
    * Get project by key
    */
   async getProject(projectKey: string): Promise<APIResponse<unknown>> {
-    return this.request(`/rest/api/3/project/${projectKey}`);
+    return this.request(`/rest/api/2/project/${projectKey}`);
   }
 
   /**
@@ -577,8 +584,16 @@ export class DataCenterAPIClient {
   /**
    * Validate endpoint support
    */
-  validateEndpoint(cloudEndpoint: string): { supported: boolean; reason?: string } {
-    return this.endpointMapper.validateEndpointSupport(cloudEndpoint);
+  validateEndpoint(dcEndpoint: string): { supported: boolean; reason?: string } {
+    try {
+      this.validateDCEndpoint(dcEndpoint);
+      return { supported: true };
+    } catch (error) {
+      return { 
+        supported: false, 
+        reason: error instanceof Error ? error.message : 'Invalid endpoint format'
+      };
+    }
   }
 
   /**
@@ -587,12 +602,16 @@ export class DataCenterAPIClient {
   getClientStats(): {
     version: APIVersion;
     userCacheStats: unknown;
-    supportedEndpoints: number;
+    supportedEndpoints: string[];
   } {
+    const supportedEndpoints = [
+      '/rest/api/2/', '/rest/api/latest/', '/rest/agile/1.0/'
+    ];
+    
     return {
       version: this.versionManager.getCurrentVersion(),
       userCacheStats: this.userResolver.getCacheStats(),
-      supportedEndpoints: this.endpointMapper.getSupportedEndpoints().length
+      supportedEndpoints
     };
   }
 
