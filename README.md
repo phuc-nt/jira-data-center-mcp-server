@@ -6,7 +6,7 @@
   <img src="assets/atlassian_logo_icon.png" alt="Jira Logo" width="120" />
 </p>
 
-[![Tools](https://img.shields.io/badge/Tools-40%20Operational-blue)](#features)
+[![Tools](https://img.shields.io/badge/Tools-38%20Operational-blue)](#features)
 [![Architecture](https://img.shields.io/badge/Architecture-3%20Modules-orange)](#modular-architecture)
 [![License](https://img.shields.io/badge/License-MIT-green)](#license)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)](#production-status)
@@ -17,10 +17,10 @@
 
 ## ✨ Features
 
-### 🔧 **40 Operational Tools Across 3 Specialized Modules:**
+### 🔧 **38 Operational Tools Across 3 Specialized Modules:**
 
 - **Core Module** (14): Essential CRUD operations, user management, project operations with DC optimizations
-- **Agile Module** (12): Sprint & board management, workflow operations with HIGH compatibility  
+- **Agile Module** (10): Sprint & board management, workflow operations with HIGH compatibility  
 - **Search Module** (14): Enhanced search with DC-specific optimizations, universal user search
 
 ### 🎯 **Key Capabilities:**
@@ -45,20 +45,22 @@ npm run build
 
 ## Architecture
 
-### Module Distribution (40 Total Tools - Production Ready)
+### Module Distribution (38 Total Tools - Production Ready)
 
 | Module | Tools | Compatibility | Use Case |
 |--------|-------|---------------|-----------|
 | **Core** | 14 | MODERATE | Essential CRUD operations with DC adaptations |
-| **Agile** | 12 | HIGH | Sprint & workflow management (unchanged API) |
+| **Agile** | 10 | HIGH | Sprint & workflow management (unchanged API) |
 | **Search** | 14 | HIGH | Enhanced search with DC-specific optimizations |
 
 ### Configuration Options
 
-**3 Deployment Strategies:**
-- **Unified Server** (40 tools): Single MCP server with all modules integrated
-- **Development Mode** (40 tools): TSX runtime for development
-- **Production Mode** (40 tools): Compiled JavaScript for production deployment
+**4 Deployment Strategies:**
+- **Unified Server** (38 tools): Single MCP server with all modules integrated
+- **Individual Servers**: Modular deployment with dedicated MCP servers
+  - **Core Server** (14 tools): Essential CRUD operations
+  - **Agile Server** (10 tools): Sprint & board management  
+  - **Search Server** (14 tools): Enhanced search capabilities
 
 **📖 [Complete Configuration Guide](INSTALL.md)** - Detailed setup instructions with working configs
 

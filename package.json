@@ -6,9 +6,9 @@
   "main": "dist/index.js",
   "bin": {
     "mcp-jira-dc-server": "dist/index.js",
-    "mcp-jira-dc-core": "dist/modules/core/index.js",
-    "mcp-jira-dc-agile": "dist/modules/agile/index.js",
-    "mcp-jira-dc-search": "dist/modules/search/index.js"
+    "mcp-jira-dc-core": "dist/modules/core/mcp-server.js",
+    "mcp-jira-dc-agile": "dist/modules/agile/mcp-server.js",
+    "mcp-jira-dc-search": "dist/modules/search/mcp-server.js"
   },
   "directories": {
     "doc": "docs"
