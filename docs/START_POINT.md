@@ -1,10 +1,10 @@
 # MCP Jira Data Center Server v1.0.0 - Project Hub
 
 **Latest Achievement**: Sprint 1.5 Search Module ✅ COMPLETED - 14 Search tools với HIGH COMPATIBILITY hoàn tất  
-**Current Status**: 🎉 PROJECT COMPLETED - All 40 tools successfully deployed  
-**Project Status**: v1.0.0-DC ✅ COMPLETED - 40/40 tools operational (100% success rate)
+**Current Status**: 🔄 ACTIVE ISSUES - Critical deployment issues discovered requiring resolution  
+**Project Status**: v1.0.0-DC ⚠️  ISSUES IDENTIFIED - 40/40 tools compiled but deployment issues found
 
-> **Final Status**: v1.0.0-DC Production Ready - All modules deployed successfully trong single day!
+> **Current Focus**: Sprint 1.6 Issue Resolution - Fixing MCP connection and endpoint mapping conflicts
 
 ---
 
@@ -87,9 +87,24 @@
 ✅ Multi-Entity Search System       # Cross-module search với unified interface
 ```
 
-**🎉 PROJECT STATUS: v1.0.0-DC PRODUCTION DEPLOYED - 40/40 tools operational (100% success rate)**
+**🔄 PROJECT STATUS: v1.0.0-DC ISSUES IDENTIFIED - 40/40 tools compiled but deployment issues found**
 
-**Final Achievement**: Production deployment strategy implemented với full MCP integration - Ready for immediate deployment!
+**Current Achievement**: Full MCP integration completed but critical issues discovered requiring resolution
+
+### 🚨 Active Issues (Sprint 1.6)
+
+**Critical Issues Requiring Resolution**:
+- **Issue #1**: MCP Connection Problems - Individual modules fail with MCP error -32000
+- **Issue #2**: Endpoint Mapping Conflicts - "Endpoint not supported in Data Center" errors
+
+**📋 Issue Tracking**: [Issues Tracker](02_implementation/issues_tracker.md)  
+**🛠️ Sprint Execution Plan**: 
+- [Sprint 2.1](02_implementation/sprint_2_1_endpoint_mapping_fix.md) - Endpoint mapping architecture fix (3-4 days)
+- [Sprint 2.2](02_implementation/sprint_2_2_mcp_connection_fix.md) - MCP connection architecture fix (2-3 days)
+
+**Detailed Analysis**: [Issue #1 Plan](02_implementation/issue_1_mcp_connection_plan.md) | [Issue #2 Plan](02_implementation/issue_2_endpoint_mapping_plan.md)
+
+**Target Resolution**: Sprint 2.1 → Sprint 2.2 (5-7 days sequential execution)
 
 **🚀 PRODUCTION COMMANDS:**
 ```bash
