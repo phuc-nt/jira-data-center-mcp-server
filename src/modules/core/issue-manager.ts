@@ -94,7 +94,7 @@ export class IssueManager {
    * Update existing issue
    * Tool: updateIssue
    * Endpoint: /rest/api/2/issue/{issueIdOrKey}
-   * Compatibility: MODERATE - Wiki Markup format, user resolution
+   * Compatibility: FIXED - Simplified fields format for DC, proper validation
    */
   async updateIssue(params: {
     issueIdOrKey: string;
@@ -103,38 +103,50 @@ export class IssueManager {
     overrideScreenSecurity?: boolean;
     overrideEditableFlag?: boolean;
   }): Promise<void> {
-    this.logger.debug('Updating issue', { 
+    this.logger.debug('Updating issue (DC format)', { 
       issueIdOrKey: params.issueIdOrKey,
       hasFields: !!params.update.fields,
       hasUpdate: !!params.update.update
     });
 
     if (!params.issueIdOrKey || params.issueIdOrKey.trim().length === 0) {
-      throw new Error('Issue ID or key is required');
+      const error = {
+        status: 400,
+        message: 'Issue ID or key is required',
+        errorMessages: ['Missing required parameter: issueIdOrKey'],
+        errors: {}
+      };
+      this.logger.error('Missing issue identifier', error);
+      throw new Error(`HTTP 400: ${JSON.stringify(error, null, 2)}`);
     }
 
-    // Process fields for DC format
-    let processedFields;
+    if (!params.update.fields && !params.update.update) {
+      const error = {
+        status: 400,
+        message: 'Either fields or update operations must be provided',
+        errorMessages: ['No fields or update operations specified'],
+        errors: {}
+      };
+      this.logger.error('No update data provided', error);
+      throw new Error(`HTTP 400: ${JSON.stringify(error, null, 2)}`);
+    }
+
+    // FOR DC: Use simplified fields format
+    const requestBody: any = {};
+    
     if (params.update.fields) {
-      processedFields = await this.processIssueFields(params.update.fields);
+      // Simple fields object for DC (no complex processing)
+      requestBody.fields = params.update.fields;
     }
-
-    const requestBody: UpdateIssueParams = {
-      fields: processedFields,
-      update: params.update.update,
-      historyMetadata: params.update.historyMetadata,
-      properties: params.update.properties
-    };
+    
+    if (params.update.update) {
+      // Update operations for complex changes
+      requestBody.update = params.update.update;
+    }
 
     const queryParams: Record<string, unknown> = {};
     if (params.notifyUsers !== undefined) {
       queryParams.notifyUsers = params.notifyUsers;
-    }
-    if (params.overrideScreenSecurity !== undefined) {
-      queryParams.overrideScreenSecurity = params.overrideScreenSecurity;
-    }
-    if (params.overrideEditableFlag !== undefined) {
-      queryParams.overrideEditableFlag = params.overrideEditableFlag;
     }
 
     try {
@@ -147,17 +159,48 @@ export class IssueManager {
         }
       );
 
-      this.logger.info('Issue updated successfully', {
+      this.logger.info('Issue updated successfully (DC format)', {
         issueIdOrKey: params.issueIdOrKey,
-        fieldsUpdated: processedFields ? Object.keys(processedFields) : [],
-        notifyUsers: params.notifyUsers
+        fieldsUpdated: requestBody.fields ? Object.keys(requestBody.fields) : [],
+        updateOperations: requestBody.update ? Object.keys(requestBody.update) : [],
+        dcFormat: 'Used simplified fields format for DC compatibility'
       });
-    } catch (error) {
-      this.logger.error('Failed to update issue', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        issueIdOrKey: params.issueIdOrKey
-      });
-      throw error;
+    } catch (error: any) {
+      // Enhanced error handling for DC issue updates
+      const errorDetails = {
+        endpoint: `/rest/api/2/issue/${params.issueIdOrKey}`,
+        requestBody,
+        queryParams,
+        originalError: error instanceof Error ? error.message : 'Unknown error',
+        dcGuidance: 'Jira DC requires simplified fields format and proper permissions'
+      };
+
+      this.logger.error('Failed to update issue - DC API issue', errorDetails);
+
+      const dcError = {
+        status: 400,
+        message: 'Cannot update issue in Jira Data Center',
+        errorMessages: [
+          `Failed to update issue '${params.issueIdOrKey}'`,
+          'Verify the issue exists and is editable',
+          'Check if your PAT token has "Edit issues" permission',
+          'Ensure field values are valid for the issue type and project'
+        ],
+        errors: {
+          issue: `Issue '${params.issueIdOrKey}' may not exist or not editable`,
+          permission: 'May lack "Edit issues" permission',
+          fields: 'Field values may be invalid or restricted'
+        },
+        troubleshooting: {
+          permissions: 'Ensure PAT has "Edit issues" permission',
+          issueAccess: 'Verify the issue exists and you have edit access',
+          fieldValidation: 'Check if all field values are valid for the issue type',
+          requiredFields: 'Some field updates may require additional required fields',
+          dcFormat: 'DC API prefers simple fields format: { "fields": { "summary": "new value" } }'
+        },
+        dcSolution: 'Use updateIssue with simple fields: { issueIdOrKey: "ISSUE-123", update: { fields: { summary: "Updated summary" } } }'
+      };
+      throw new Error(`HTTP 400: ${JSON.stringify(dcError, null, 2)}`);
     }
   }
 
@@ -165,22 +208,28 @@ export class IssueManager {
    * Delete issue
    * Tool: deleteIssue
    * Endpoint: /rest/api/2/issue/{issueIdOrKey}
-   * Compatibility: HIGH - Version change only
+   * Compatibility: FIXED - Admin permission required, proper error handling
    */
   async deleteIssue(params: {
     issueIdOrKey: string;
     deleteSubtasks?: boolean;
   }): Promise<void> {
-    this.logger.debug('Deleting issue', { params });
+    this.logger.debug('Deleting issue (admin operation)', { params });
 
     if (!params.issueIdOrKey || params.issueIdOrKey.trim().length === 0) {
-      throw new Error('Issue ID or key is required');
+      const error = {
+        status: 400,
+        message: 'Issue ID or key is required',
+        errorMessages: ['Missing required parameter: issueIdOrKey'],
+        errors: {}
+      };
+      this.logger.error('Missing issue identifier', error);
+      throw new Error(`HTTP 400: ${JSON.stringify(error, null, 2)}`);
     }
 
     const queryParams: Record<string, unknown> = {};
-    if (params.deleteSubtasks !== undefined) {
-      queryParams.deleteSubtasks = params.deleteSubtasks;
-    }
+    // Default deleteSubtasks to true for DC compatibility
+    queryParams.deleteSubtasks = params.deleteSubtasks !== undefined ? params.deleteSubtasks : true;
 
     try {
       await this.apiClient.request(
@@ -191,16 +240,74 @@ export class IssueManager {
         }
       );
 
-      this.logger.info('Issue deleted successfully', {
+      this.logger.info('Issue deleted successfully (admin operation)', {
         issueIdOrKey: params.issueIdOrKey,
-        deleteSubtasks: params.deleteSubtasks
+        deleteSubtasks: queryParams.deleteSubtasks,
+        dcFormat: 'Admin-level operation completed'
       });
-    } catch (error) {
-      this.logger.error('Failed to delete issue', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        issueIdOrKey: params.issueIdOrKey
-      });
-      throw error;
+    } catch (error: any) {
+      // Enhanced error handling for DC delete operations
+      const errorDetails = {
+        endpoint: `/rest/api/2/issue/${params.issueIdOrKey}`,
+        queryParams,
+        originalError: error instanceof Error ? error.message : 'Unknown error',
+        dcGuidance: 'Jira DC requires admin permissions for issue deletion'
+      };
+
+      this.logger.error('Failed to delete issue - DC permission issue', errorDetails);
+
+      // Check if it's a permission error (403)
+      if (error.message && (error.message.includes('403') || error.message.includes('Forbidden'))) {
+        const dcError = {
+          status: 403,
+          message: 'Insufficient permissions to delete issue in Jira Data Center',
+          errorMessages: [
+            `Cannot delete issue '${params.issueIdOrKey}' - admin permissions required`,
+            'Delete Issues permission is restricted to Project Administrators or Jira Administrators',
+            'Your PAT token does not have sufficient privileges for this operation',
+            'Contact your Jira administrator to request admin-level PAT token'
+          ],
+          errors: {
+            permission: 'Delete Issues permission required (Admin-only operation)',
+            patToken: 'Current PAT token lacks admin privileges',
+            issue: `Issue '${params.issueIdOrKey}' deletion not permitted`
+          },
+          troubleshooting: {
+            permissionRequired: 'Delete Issues permission (Admin-only)',
+            patUpgrade: 'Request admin-level PAT token from Jira administrator',
+            alternativeSolution: 'Ask project admin to delete the issue manually',
+            projectRole: 'Ensure you have Project Administrator role',
+            systemRole: 'May require Jira Administrator role for some projects'
+          },
+          dcSolution: 'Contact Jira admin to: 1) Grant Delete Issues permission, 2) Provide admin-level PAT token'
+        };
+        throw new Error(`HTTP 403: ${JSON.stringify(dcError, null, 2)}`);
+      }
+
+      // Other errors (404, 400, etc.)
+      const dcError = {
+        status: 400,
+        message: 'Cannot delete issue in Jira Data Center',
+        errorMessages: [
+          `Failed to delete issue '${params.issueIdOrKey}'`,
+          'Verify the issue exists and is deletable',
+          'Check if the issue has dependencies (links, subtasks) preventing deletion',
+          'Ensure you have admin-level permissions'
+        ],
+        errors: {
+          issue: `Issue '${params.issueIdOrKey}' may not exist or not deletable`,
+          dependencies: 'Issue may have blocking dependencies',
+          permission: 'Admin permissions required for deletion'
+        },
+        troubleshooting: {
+          issueExists: 'Verify the issue key/ID exists in your DC instance',
+          dependencies: 'Check for issue links or subtasks preventing deletion',
+          permissions: 'Ensure admin-level PAT token with Delete Issues permission',
+          deleteSubtasks: 'Set deleteSubtasks=true to handle subtask dependencies'
+        },
+        dcSolution: 'Use admin PAT token and verify issue exists: deleteIssue({ issueIdOrKey: "ISSUE-123", deleteSubtasks: true })'
+      };
+      throw new Error(`HTTP 400: ${JSON.stringify(dcError, null, 2)}`);
     }
   }
 
@@ -208,35 +315,50 @@ export class IssueManager {
    * Assign issue to user
    * Tool: assignIssue
    * Endpoint: /rest/api/2/issue/{issueIdOrKey}/assignee
-   * Compatibility: MODERATE - Username fallback for DC
+   * Compatibility: FIXED - Use name field only for DC (accountId not supported)
    */
   async assignIssue(params: {
     issueIdOrKey: string;
     assignee: AssignIssueParams;
   }): Promise<void> {
-    this.logger.debug('Assigning issue', { 
+    this.logger.debug('Assigning issue (DC format)', { 
       issueIdOrKey: params.issueIdOrKey,
       assignee: params.assignee
     });
 
     if (!params.issueIdOrKey || params.issueIdOrKey.trim().length === 0) {
-      throw new Error('Issue ID or key is required');
+      const error = {
+        status: 400,
+        message: 'Issue ID or key is required',
+        errorMessages: ['Missing required parameter: issueIdOrKey'],
+        errors: {}
+      };
+      this.logger.error('Missing issue identifier', error);
+      throw new Error(`HTTP 400: ${JSON.stringify(error, null, 2)}`);
     }
 
     if (!params.assignee.accountId && !params.assignee.name) {
-      throw new Error('Either accountId or username (name) must be provided for assignee');
+      const error = {
+        status: 400,
+        message: 'Assignee information required',
+        errorMessages: ['Either accountId or username (name) must be provided for assignee'],
+        errors: {}
+      };
+      this.logger.error('Missing assignee information', error);
+      throw new Error(`HTTP 400: ${JSON.stringify(error, null, 2)}`);
     }
 
-    // DC supports both accountId and name (username) for backward compatibility
-    const requestBody: AssignIssueParams = {};
+    // FOR DC: Use name field only (accountId not supported in most DC versions)
+    const requestBody: any = {};
     
-    if (params.assignee.accountId) {
-      requestBody.accountId = params.assignee.accountId;
-    }
-    
-    // Include name for DC compatibility
     if (params.assignee.name) {
       requestBody.name = params.assignee.name;
+    } else if (params.assignee.accountId) {
+      // Convert accountId to name if possible, but prefer name
+      requestBody.name = params.assignee.accountId; // Fallback attempt
+      this.logger.warn('Using accountId as name fallback for DC compatibility', {
+        accountId: params.assignee.accountId
+      });
     }
 
     try {
@@ -248,18 +370,46 @@ export class IssueManager {
         }
       );
 
-      this.logger.info('Issue assigned successfully', {
+      this.logger.info('Issue assigned successfully (DC format)', {
         issueIdOrKey: params.issueIdOrKey,
-        assigneeAccountId: params.assignee.accountId,
-        assigneeName: params.assignee.name
+        assigneeName: requestBody.name,
+        dcFormat: 'Used name field for DC compatibility'
       });
-    } catch (error) {
-      this.logger.error('Failed to assign issue', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        issueIdOrKey: params.issueIdOrKey,
-        assignee: params.assignee
-      });
-      throw error;
+    } catch (error: any) {
+      // Enhanced error handling for DC assignment
+      const errorDetails = {
+        endpoint: `/rest/api/2/issue/${params.issueIdOrKey}/assignee`,
+        requestBody,
+        originalError: error instanceof Error ? error.message : 'Unknown error',
+        dcGuidance: 'Jira DC requires name field (username) for issue assignment'
+      };
+
+      this.logger.error('Failed to assign issue - DC API issue', errorDetails);
+
+      const dcError = {
+        status: 400,
+        message: 'Cannot assign issue in Jira Data Center',
+        errorMessages: [
+          `Failed to assign issue '${params.issueIdOrKey}' to user '${requestBody.name}'`,
+          'Verify the username exists and is active in your Jira Data Center instance',
+          'Check if your PAT token has "Assign issues" permission',
+          'Ensure the user has appropriate permissions in the project'
+        ],
+        errors: {
+          assignee: `User '${requestBody.name}' may not exist or not assignable`,
+          permission: 'May lack "Assign issues" permission',
+          issueKey: `Issue '${params.issueIdOrKey}' may not exist or not accessible`
+        },
+        troubleshooting: {
+          permissions: 'Ensure PAT has "Assign issues" permission',
+          userValidation: 'Verify the username exists in your DC instance',
+          projectAccess: 'Check if user has access to the project',
+          issueAccess: 'Verify the issue exists and is editable',
+          dcFormat: 'DC API requires: { "name": "username" } format'
+        },
+        dcSolution: 'Use assignIssue({ issueIdOrKey: "ISSUE-123", assignee: { name: "username" } })'
+      };
+      throw new Error(`HTTP 400: ${JSON.stringify(dcError, null, 2)}`);
     }
   }
 

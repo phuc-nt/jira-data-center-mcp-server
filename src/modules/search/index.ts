@@ -316,6 +316,8 @@ export class SearchModule {
     maxResults?: number;
     expand?: string[];
   } = {}) {
+    this.logger.debug('Listing filters (DC format)', { params });
+
     const queryParams: Record<string, unknown> = {};
     
     Object.entries(params).forEach(([key, value]) => {
@@ -330,15 +332,58 @@ export class SearchModule {
       }
     });
 
-    const response = await this.apiClient.request<any>(
-      '/rest/api/2/filter/search',
-      {
-        method: 'GET',
-        queryParams
-      }
-    );
+    try {
+      // FOR DC: Use /rest/api/2/filter instead of /rest/api/2/filter/search
+      const response = await this.apiClient.request<any>(
+        '/rest/api/2/filter',  // Removed /search suffix for DC compatibility
+        {
+          method: 'GET',
+          queryParams
+        }
+      );
 
-    return response.data;
+      this.logger.info('Filters listed successfully (DC format)', {
+        count: Array.isArray(response.data) ? response.data.length : 'unknown',
+        endpoint: '/rest/api/2/filter',
+        dcFormat: 'Used DC endpoint without /search suffix'
+      });
+
+      return response.data;
+    } catch (error: any) {
+      // Enhanced error handling for DC filter access
+      const errorDetails = {
+        endpoint: '/rest/api/2/filter',
+        queryParams,
+        originalError: error instanceof Error ? error.message : 'Unknown error',
+        dcGuidance: 'Jira DC uses /rest/api/2/filter endpoint without /search suffix'
+      };
+
+      this.logger.error('Failed to list filters - DC API issue', errorDetails);
+
+      const dcError = {
+        status: 404,
+        message: 'Cannot list filters in Jira Data Center',
+        errorMessages: [
+          'No filters accessible with current permissions',
+          'Verify your PAT token has \"Browse\" permission for filters',
+          'Check if any filters exist in your Jira Data Center instance',
+          'Ensure you have access to at least one filter (own or shared)'
+        ],
+        errors: {
+          permission: 'May lack filter access permissions',
+          filters: 'No accessible filters found or none exist'
+        },
+        troubleshooting: {
+          permissions: 'Ensure PAT has filter access permissions',
+          filterExists: 'Create a test filter to verify functionality',
+          shareSettings: 'Check filter sharing settings and permissions',
+          dcEndpoint: 'DC API uses /rest/api/2/filter (not /filter/search)',
+          alternatives: 'Try getting a specific filter by ID if known'
+        },
+        dcSolution: 'Use listFilters() to get accessible filters or create a test filter first'
+      };
+      throw new Error(`HTTP 404: ${JSON.stringify(dcError, null, 2)}`);
+    }
   }
 
   /**

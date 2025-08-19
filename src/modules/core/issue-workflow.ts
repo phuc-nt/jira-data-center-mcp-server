@@ -91,7 +91,7 @@ export class IssueWorkflowManager {
     transition: TransitionIssueParams;
     expand?: string[];
   }): Promise<void> {
-    this.logger.debug('Transitioning issue', { 
+    this.logger.debug('Transitioning issue (DC format)', { 
       issueIdOrKey: params.issueIdOrKey,
       transitionId: params.transition.transition.id,
       hasFields: !!params.transition.fields,
@@ -99,15 +99,32 @@ export class IssueWorkflowManager {
     });
 
     if (!params.issueIdOrKey || params.issueIdOrKey.trim().length === 0) {
-      throw new Error('Issue ID or key is required');
+      const error = {
+        status: 400,
+        message: 'Issue ID or key is required',
+        errorMessages: ['Missing required parameter: issueIdOrKey'],
+        errors: {}
+      };
+      this.logger.error('Missing issue identifier', error);
+      throw new Error(`HTTP 400: ${JSON.stringify(error, null, 2)}`);
     }
 
     if (!params.transition.transition?.id) {
-      throw new Error('Transition ID is required');
+      const error = {
+        status: 400,
+        message: 'Transition ID is required',
+        errorMessages: ['Missing required parameter: transition.transition.id'],
+        errors: {}
+      };
+      this.logger.error('Missing transition ID', error);
+      throw new Error(`HTTP 400: ${JSON.stringify(error, null, 2)}`);
     }
 
+    // FOR DC: Ensure transition ID is string format
+    const transitionId = params.transition.transition.id.toString();
+
     // Validate transition is available
-    await this.validateTransition(params.issueIdOrKey, params.transition.transition.id);
+    await this.validateTransition(params.issueIdOrKey, transitionId);
 
     // Process fields for DC format if needed
     let processedFields;
@@ -115,8 +132,11 @@ export class IssueWorkflowManager {
       processedFields = await this.processTransitionFields(params.transition.fields);
     }
 
+    // FOR DC: Use proper request body format with string transition ID
     const requestBody: TransitionIssueParams = {
-      transition: params.transition.transition,
+      transition: {
+        id: transitionId // Ensure string format for DC
+      },
       fields: processedFields,
       update: params.transition.update,
       historyMetadata: params.transition.historyMetadata,
@@ -138,18 +158,48 @@ export class IssueWorkflowManager {
         }
       );
 
-      this.logger.info('Issue transitioned successfully', {
+      this.logger.info('Issue transitioned successfully (DC format)', {
         issueIdOrKey: params.issueIdOrKey,
-        transitionId: params.transition.transition.id,
-        fieldsUpdated: processedFields ? Object.keys(processedFields) : []
+        transitionId: transitionId,
+        fieldsUpdated: processedFields ? Object.keys(processedFields) : [],
+        dcFormat: 'Used string transition ID for DC compatibility'
       });
-    } catch (error) {
-      this.logger.error('Failed to transition issue', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        issueIdOrKey: params.issueIdOrKey,
-        transitionId: params.transition.transition.id
-      });
-      throw error;
+    } catch (error: any) {
+      // Enhanced error handling for DC transitions
+      const errorDetails = {
+        endpoint: `/rest/api/2/issue/${params.issueIdOrKey}/transitions`,
+        requestBody,
+        queryParams,
+        originalError: error instanceof Error ? error.message : 'Unknown error',
+        dcGuidance: 'Jira DC requires string transition ID and proper field validation'
+      };
+
+      this.logger.error('Failed to transition issue - DC API issue', errorDetails);
+
+      const dcError = {
+        status: 400,
+        message: 'Cannot transition issue in Jira Data Center',
+        errorMessages: [
+          `Failed to transition issue '${params.issueIdOrKey}' using transition ID '${transitionId}'`,
+          'Verify the transition is available for the current issue status',
+          'Check if your PAT token has \"Transition issues\" permission',
+          'Ensure required fields are provided for the transition'
+        ],
+        errors: {
+          transition: `Transition '${transitionId}' may not be available for current status`,
+          permission: 'May lack \"Transition issues\" permission',
+          requiredFields: 'Some transitions require additional fields (resolution, comment, etc.)'
+        },
+        troubleshooting: {
+          permissions: 'Ensure PAT has \"Transition issues\" permission',
+          transitionValidation: 'Use getIssueTransitions to check available transitions first',
+          requiredFields: 'Check transition.fields for required fields when getting transitions',
+          fieldValidation: 'Ensure all required fields are provided with valid values',
+          dcFormat: 'DC API requires: { \"transition\": { \"id\": \"21\" } } with string ID'
+        },
+        dcSolution: 'Use transitionIssue({ issueIdOrKey: \"ISSUE-123\", transition: { transition: { id: \"21\" }, fields: { resolution: { name: \"Fixed\" } } } })'
+      };
+      throw new Error(`HTTP 400: ${JSON.stringify(dcError, null, 2)}`);
     }
   }
 
