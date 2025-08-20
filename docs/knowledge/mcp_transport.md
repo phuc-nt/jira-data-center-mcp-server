@@ -1,7 +1,3 @@
-Chắc chắn rồi! Dưới đây là bài giải thích tổng hợp về các kiểu transport khi xây dựng MCP server, được viết theo hướng cơ bản và dễ hiểu cho người mới bắt đầu.
-
-***
-
 ## Giải thích các kiểu "Transport" trong MCP Server
 
 Khi xây dựng một MCP server, "transport" (phương thức vận chuyển) là khái niệm cốt lõi, quyết định **cách thức giao tiếp** giữa AI Client (như Cline, Claude, VS Code) và MCP server của bạn. Hãy tưởng tượng nó như cách bạn chọn phương tiện để đi từ điểm A đến B: đi bộ, đi xe máy, hay đi máy bay. Mỗi phương thức có ưu và nhược điểm riêng.
